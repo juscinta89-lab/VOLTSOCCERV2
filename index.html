@@ -171,6 +171,21 @@
   .calrow .btn{padding:11px 20px;}
   .calhint{font-size:10px; color:var(--muted); margin-top:9px; line-height:1.5;}
 
+  /* ---- Low battery alert banner ---- */
+  .lowbanner{
+    position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 10px); transform:translateX(-50%);
+    z-index:80; display:flex; align-items:center; gap:10px; max-width:92vw;
+    background:linear-gradient(180deg,#3a0f0f,#2a0a0a); color:#ffd9d9;
+    border:1px solid var(--red); border-radius:12px;
+    padding:11px 14px; font-size:13px; font-weight:800; letter-spacing:1px;
+    box-shadow:0 14px 40px rgba(0,0,0,.55), 0 0 22px rgba(239,83,80,.5);
+    animation:lbpulse 1s ease-in-out infinite;
+  }
+  .lowbanner .ico{font-size:18px;}
+  .lowbanner .pc{color:#fff;}
+  .lowbanner button{background:transparent; border:1px solid var(--red); color:#ffd9d9; border-radius:8px; width:26px; height:26px; cursor:pointer; font-weight:800;}
+  @keyframes lbpulse{50%{box-shadow:0 14px 40px rgba(0,0,0,.55), 0 0 34px rgba(239,83,80,.9);}}
+
   @media (max-height:480px){
     .sheet .card{padding:14px 20px;}
     .srow{margin:11px 0;}
@@ -180,6 +195,11 @@
 </style>
 </head>
 <body>
+
+<div class="lowbanner hidden" id="lowBanner">
+  <span class="ico">⚠</span><span>LOW BATTERY · <span class="pc">10%</span> — bring it back!</span>
+  <button id="lowDismiss" title="Dismiss">✕</button>
+</div>
 
 <header>
   <div class="brand"><b>ROBOSOCCER <span class="byv">BY VOLT.</span></b><span>TWIN-STICK CONTROLLER</span></div>
@@ -263,6 +283,9 @@ let curX=0, curY=0, lastSent='', inflight=false;
 let moveGain=100, turnGain=100;
 let lastRawV=0, appCal=1;          // battery calibration on the app side
 const CELLS=3;                     // 3S LiPo
+/* Standard 3S LiPo resting voltage -> % curve (per cell). Tunable. */
+const CURVE_V=[3.27,3.61,3.69,3.71,3.73,3.75,3.77,3.79,3.80,3.82,3.84,3.85,3.87,3.91,3.95,3.98,4.02,4.08,4.11,4.15,4.20];
+const CURVE_P=[0,   5,   10,  15,  20,  25,  30,  35,  40,  45,  50,  55,  60,  65,  70,  75,  80,  85,  90,  95,  100];
 const $ = id => document.getElementById(id);
 const led=$('led'), statusText=$('statusText'), connectBtn=$('connectBtn');
 const valX=$('valX'), valY=$('valY'), barX=$('barX'), barY=$('barY');
@@ -335,12 +358,14 @@ if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.s
 /* ---- Battery ---- */
 function classFor(p){ return p>50?'ok':(p>20?'warn':'low'); }
 function pctFromVolt(v){
-  const cell=v/CELLS;
-  const V=[3.30,3.50,3.70,3.80,3.85,3.92,4.00,4.10,4.20];
-  const P=[0,10,25,45,60,72,85,95,100];
-  if(cell<=V[0]) return 0;
-  if(cell>=V[8]) return 100;
-  for(let i=0;i<8;i++){ if(cell<V[i+1]) return Math.round(P[i]+(cell-V[i])/(V[i+1]-V[i])*(P[i+1]-P[i])); }
+  const cell=v/CELLS, n=CURVE_V.length;
+  if(cell<=CURVE_V[0]) return 0;
+  if(cell>=CURVE_V[n-1]) return 100;
+  for(let i=0;i<n-1;i++){
+    if(cell<CURVE_V[i+1]){
+      return Math.round(CURVE_P[i]+(cell-CURVE_V[i])/(CURVE_V[i+1]-CURVE_V[i])*(CURVE_P[i+1]-CURVE_P[i]));
+    }
+  }
   return 100;
 }
 function onBatt(e){
@@ -354,11 +379,49 @@ function onBatt(e){
   battMiniTxt.textContent=v.toFixed(1)+' V'; battMiniFill.style.width=pc+'%';
   battMini.classList.remove('ok','warn','low'); battMini.classList.add(cls);
   const calNow=$('calNow'); if(calNow) calNow.textContent=v.toFixed(2)+' V';
+  checkLowBattery(pc);
 }
 function resetBatt(){
   battV.textContent='--.- V'; battP.textContent='--%'; battFill.style.width='0%';
   battMiniTxt.textContent='--.- V'; battMiniFill.style.width='0%';
   battCard.classList.remove('ok','warn','low'); battMini.classList.remove('ok','warn','low');
+  lowArmed=true; const lb=$('lowBanner'); if(lb) lb.classList.add('hidden');
+}
+
+/* ---- Low battery alert ---- */
+const LOW_ALERT_PCT=10, REARM_PCT=15;   // alert at <=10%, re-arm at >=15%
+let lowArmed=true, audioCtx=null;
+function beepLow(){
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const t=audioCtx.currentTime;
+    for(let k=0;k<3;k++){
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination); o.type='square'; o.frequency.value=920;
+      const s=t+k*0.28;
+      g.gain.setValueAtTime(0.0001,s);
+      g.gain.exponentialRampToValueAtTime(0.3,s+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,s+0.2);
+      o.start(s); o.stop(s+0.22);
+    }
+  }catch(_){}
+}
+function showLowBanner(pc){
+  const b=$('lowBanner'); if(!b) return;
+  b.querySelector('.pc').textContent=pc+'%';
+  b.classList.remove('hidden');
+  clearTimeout(b._t); b._t=setTimeout(()=>b.classList.add('hidden'),7000);
+}
+$('lowDismiss').onclick=()=>$('lowBanner').classList.add('hidden');
+function checkLowBattery(pc){
+  if(pc<=LOW_ALERT_PCT && lowArmed){
+    lowArmed=false;
+    showLowBanner(pc);
+    try{ navigator.vibrate && navigator.vibrate([200,120,200,120,400]); }catch(_){}
+    beepLow();
+  }else if(pc>=REARM_PCT){
+    lowArmed=true;
+  }
 }
 
 /* ---- BLE ---- */
