@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1620">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ROBOSOCCER Pad</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/favicon.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<style>
+  :root{
+    --bg:#0e1620; --panel:#16212e; --panel-2:#1d2c3c;
+    --line:#27384a; --muted:#7e93a6; --text:#e7f0f7;
+    --cyan:#22d3ee; --amber:#f5a524; --red:#ef5350; --green:#34d399;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;overflow:hidden;}
+  body{
+    background:radial-gradient(900px 520px at 82% -12%, #122433 0, transparent 60%), var(--bg);
+    color:var(--text);
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+    touch-action:none; user-select:none;
+    display:flex; flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;}
+
+  header{
+    display:flex; align-items:center; gap:7px;
+    padding:8px 14px; border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--panel),transparent); flex:0 0 auto;
+  }
+  .brand{display:flex; flex-direction:column; line-height:1; margin-right:auto;}
+  .brand b{font-size:15px; letter-spacing:3px; font-weight:800;}
+  .brand span{font-size:8px; letter-spacing:4px; color:var(--muted); margin-top:5px;}
+  .brand .dot{color:var(--amber);}
+  .status{display:flex; align-items:center; gap:7px; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted);}
+  .led{width:10px;height:10px;border-radius:50%;background:var(--red);}
+  .led.on{background:var(--green); box-shadow:0 0 12px 1px rgba(52,211,153,.7);}
+  .btn{
+    border:1px solid var(--line); background:var(--panel-2); color:var(--text);
+    font:inherit; font-size:13px; letter-spacing:1px; font-weight:700;
+    padding:9px 15px; border-radius:10px; cursor:pointer;
+    transition:transform .06s ease, border-color .15s, background .15s;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn.primary{border-color:var(--cyan); color:#062a33; background:var(--cyan);}
+  .btn.danger{border-color:var(--red); color:var(--red); background:transparent;}
+  .icon-btn{
+    width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;
+    font-size:17px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);
+    border-radius:10px;cursor:pointer;
+  }
+  .icon-btn.amber{border-color:var(--amber);color:var(--amber);}
+  .hidden{display:none !important;}
+
+  .battmini{display:flex; align-items:center; gap:6px; padding:6px 9px; border:1px solid var(--line);
+            border-radius:10px; background:var(--panel-2); font-size:12px; font-weight:700;}
+  .battmini .ico{width:22px;height:12px;border:1.5px solid var(--muted);border-radius:3px;position:relative;}
+  .battmini .ico::after{content:"";position:absolute;right:-4px;top:3px;width:3px;height:6px;background:var(--muted);border-radius:0 2px 2px 0;}
+  .battmini .ico i{position:absolute;left:1px;top:1px;bottom:1px;width:0%;background:var(--green);border-radius:1px;transition:width .4s,background .3s;}
+  .battmini .txt{color:var(--muted);}
+  .battmini.ok .ico i{background:var(--green);} .battmini.ok .txt{color:var(--green);}
+  .battmini.warn .ico i{background:var(--amber);} .battmini.warn .txt{color:var(--amber);}
+  .battmini.low .ico i{background:var(--red);} .battmini.low .txt{color:var(--red);}
+  .battmini.low{animation:blink 1s steps(1) infinite;}
+  @keyframes blink{50%{opacity:.45;}}
+
+  main{flex:1; min-height:0; display:grid; gap:10px; padding:10px 16px 12px;}
+  @media (orientation:portrait){ main{grid-template-columns:1fr 1fr; grid-template-areas:"center center" "left right"; align-content:space-between;} }
+  @media (orientation:landscape){
+    main{grid-template-columns:auto 1fr auto; grid-template-areas:"left center right"; align-items:center;}
+    .rail{display:none;}                         /* paksi X/Y sembunyi dalam landscape - pad lebih besar */
+  }
+
+  .center{grid-area:center; display:flex; flex-direction:column; align-items:center; gap:11px; justify-content:center;}
+
+  .batt{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px 16px; width:min(316px,100%); max-width:84vw;}
+  .batt .lbl{font-size:9px; letter-spacing:3px; color:var(--muted); text-transform:uppercase;}
+  .brow{display:flex; justify-content:space-between; align-items:baseline; margin-top:3px;}
+  .bv{font-size:24px; font-weight:700;}
+  .bp{font-size:14px; color:var(--muted); font-weight:700;}
+  .bbar{height:10px; background:#0c1620; border-radius:6px; margin-top:8px; overflow:hidden;}
+  .bbar i{display:block; height:100%; width:0%; background:var(--green); border-radius:6px; transition:width .4s ease, background .3s;}
+  .batt.ok .bbar i{background:var(--green);}  .batt.ok .bv{color:var(--green);}
+  .batt.warn .bbar i{background:var(--amber);} .batt.warn .bv{color:var(--amber);}
+  .batt.low .bbar i{background:var(--red);}   .batt.low .bv{color:var(--red);}
+
+  .rail{display:flex; gap:12px; justify-content:center; flex-wrap:wrap;}
+  .gauge{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:9px 14px; width:148px;}
+  .gauge .lbl{font-size:9px; letter-spacing:3px; color:var(--muted); text-transform:uppercase;}
+  .gauge .val{font-size:24px; font-weight:700; margin-top:2px;}
+  .gauge .val.pos{color:var(--cyan);} .gauge .val.neg{color:var(--amber);}
+  .bar{height:5px; background:#0c1620; border-radius:4px; margin-top:6px; position:relative; overflow:hidden;}
+  .bar i{position:absolute; top:0; bottom:0; left:50%; width:0; background:var(--cyan); transition:width .04s linear, left .04s linear;}
+
+  .pad-wrap{display:flex; flex-direction:column; align-items:center; gap:8px; justify-content:center;}
+  .pad-wrap.left{grid-area:left;} .pad-wrap.right{grid-area:right;}
+  .cap{font-size:9px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; text-align:center;}
+  .cap b{color:var(--text); font-weight:700;}
+
+  .stick{
+    --size:min(44vw,40vh,300px); width:var(--size); height:var(--size);
+    border-radius:50%; position:relative; touch-action:none;
+    background:radial-gradient(circle at 50% 42%, var(--panel-2), var(--panel) 70%);
+    border:1px solid var(--line);
+    box-shadow:inset 0 2px 22px rgba(0,0,0,.55), 0 12px 40px rgba(0,0,0,.4);
+  }
+  @media (orientation:landscape){ .stick{--size:min(56vh,34vw,320px);} }
+  .stick .guide{position:absolute; background:#2c4055; border-radius:2px;}
+  .stick.vert .guide{left:50%; top:11%; bottom:11%; width:2px; transform:translateX(-1px);}
+  .stick.horz .guide{top:50%; left:11%; right:11%; height:2px; transform:translateY(-1px);}
+  .stick .ar{position:absolute; color:#3a5269; font-size:15px; line-height:1;}
+  .stick.vert .ar.a{top:6%; left:50%; transform:translateX(-50%);}
+  .stick.vert .ar.b{bottom:6%; left:50%; transform:translateX(-50%);}
+  .stick.horz .ar.a{left:6%; top:50%; transform:translateY(-50%);}
+  .stick.horz .ar.b{right:6%; top:50%; transform:translateY(-50%);}
+  .knob{
+    position:absolute; left:50%; top:50%; width:38%; height:38%;
+    transform:translate(-50%,-50%); border-radius:50%;
+    background:radial-gradient(circle at 38% 32%, #33485e, #1a2836 72%);
+    border:1px solid #3a5269;
+    box-shadow:0 8px 22px rgba(0,0,0,.55), inset 0 1px 1px rgba(255,255,255,.08);
+  }
+  .stick.live{border-color:var(--amber);}
+  .stick.live .knob{box-shadow:0 8px 22px rgba(0,0,0,.55), 0 0 30px 5px rgba(245,165,36,.55), inset 0 1px 1px rgba(255,255,255,.1);}
+
+  /* ---- Panel tetapan laju ---- */
+  .sheet{position:fixed; inset:0; background:rgba(6,12,18,.72); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;}
+  .sheet .card{background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:22px; width:min(440px,94vw); box-shadow:0 24px 70px rgba(0,0,0,.55);}
+  .sheet h3{margin:0; font-size:14px; letter-spacing:3px;}
+  .sheet .sub{font-size:11px; color:var(--muted); margin:5px 0 14px;}
+  .srow{margin:18px 0;}
+  .srow .top{display:flex; justify-content:space-between; align-items:baseline; font-size:12px; letter-spacing:1px; color:var(--muted); text-transform:uppercase;}
+  .srow .top b{font-size:20px; font-weight:800;}
+  .srow.move .top b{color:var(--cyan);} .srow.turn .top b{color:var(--amber);}
+  input[type=range]{-webkit-appearance:none; appearance:none; width:100%; height:8px; border-radius:6px; background:#0c1620; margin-top:12px; outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:30px; height:30px; border-radius:50%; background:var(--cyan); border:3px solid #0b2932; box-shadow:0 2px 8px rgba(0,0,0,.5); cursor:pointer;}
+  input[type=range]::-moz-range-thumb{width:30px; height:30px; border-radius:50%; background:var(--cyan); border:3px solid #0b2932; cursor:pointer;}
+  input.turn[type=range]::-webkit-slider-thumb{background:var(--amber); border-color:#3a2a06;}
+  input.turn[type=range]::-moz-range-thumb{background:var(--amber); border-color:#3a2a06;}
+  .sheet .actions{display:flex; gap:10px; margin-top:22px;}
+  .sheet .actions .btn{flex:1; text-align:center;}
+  .divider{height:1px; background:var(--line); margin:6px 0 2px;}
+  .srow.cal .top b{color:var(--green);}
+  .calrow{display:flex; gap:10px; margin-top:12px;}
+  .calrow input{flex:1; min-width:0; background:#0c1620; border:1px solid var(--line); color:var(--text); border-radius:10px; padding:11px 12px; font:inherit; font-size:15px;}
+  .calrow .btn{padding:11px 20px;}
+  .calhint{font-size:10px; color:var(--muted); margin-top:9px; line-height:1.5;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>ROBOSOCCER<span class="dot">.</span></b><span>TWIN-STICK PAD</span></div>
+  <div class="battmini" id="battMini"><span class="ico"><i id="battMiniFill"></i></span><span class="txt" id="battMiniTxt">--.- V</span></div>
+  <button class="icon-btn" id="cfgBtn" title="Tetapan laju">⚙</button>
+  <button class="icon-btn" id="fsBtn" title="Skrin penuh">⛶</button>
+  <button class="icon-btn amber hidden" id="installBtn" title="Pasang app">⤓</button>
+  <div class="status"><i class="led" id="led"></i><span id="statusText">PUTUS</span></div>
+  <button class="btn primary" id="connectBtn">SAMBUNG</button>
+</header>
+
+<main>
+  <div class="pad-wrap left">
+    <div class="stick vert" id="stickL">
+      <div class="guide"></div><span class="ar a">▲</span><span class="ar b">▼</span>
+      <div class="knob" id="knobL"></div>
+    </div>
+    <div class="cap"><b>PACU</b> · depan / belakang</div>
+  </div>
+
+  <div class="center">
+    <div class="batt" id="battCard">
+      <div class="lbl">Bateri Robot</div>
+      <div class="brow"><span class="bv mono" id="battV">--.- V</span><span class="bp" id="battP">--%</span></div>
+      <div class="bbar"><i id="battFill"></i></div>
+    </div>
+    <div class="rail">
+      <div class="gauge"><div class="lbl">Pacu Y</div><div class="val mono" id="valY">0</div><div class="bar"><i id="barY"></i></div></div>
+      <div class="gauge"><div class="lbl">Pusing X</div><div class="val mono" id="valX">0</div><div class="bar"><i id="barX"></i></div></div>
+    </div>
+    <button class="btn danger" id="stopBtn">BERHENTI KECEMASAN</button>
+  </div>
+
+  <div class="pad-wrap right">
+    <div class="stick horz" id="stickR">
+      <div class="guide"></div><span class="ar a">◀</span><span class="ar b">▶</span>
+      <div class="knob" id="knobR"></div>
+    </div>
+    <div class="cap"><b>PUSING</b> · kiri / kanan</div>
+  </div>
+</main>
+
+<!-- Panel tetapan -->
+<div class="sheet hidden" id="sheet">
+  <div class="card">
+    <h3>TETAPAN LAJU</h3>
+    <div class="sub">Hadkan kelajuan maksimum. Boleh laras semasa bermain.</div>
+    <div class="srow move">
+      <div class="top"><span>Laju Gerak (depan/belakang)</span><b id="moveVal">100%</b></div>
+      <input type="range" id="moveGain" min="20" max="100" step="5" value="100">
+    </div>
+    <div class="srow turn">
+      <div class="top"><span>Laju Pusing (kiri/kanan)</span><b id="turnVal">100%</b></div>
+      <input type="range" class="turn" id="turnGain" min="20" max="100" step="5" value="100">
+    </div>
+
+    <div class="divider"></div>
+    <div class="srow cal">
+      <div class="top"><span>Kalibrasi Bateri</span><b id="calNow">--.- V</b></div>
+      <div class="calrow">
+        <input type="number" id="calInput" inputmode="decimal" step="0.01" placeholder="Voltan sebenar (cth 12.18)">
+        <button class="btn" id="calSet">SET</button>
+      </div>
+      <div class="calhint">Sambung robot dulu. Ukur bateri guna multimeter, masukkan nilai sebenar, tekan SET. App akan betulkan sendiri. (LiPo 3S)</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="cfgReset">RESET 100%</button>
+      <button class="btn primary" id="cfgClose">SELESAI</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+let device=null, rxChar=null, txChar=null, connected=false;
+let curX=0, curY=0, lastSent='', inflight=false;
+let moveGain=100, turnGain=100;
+let lastRawV=0, appCal=1;          // kalibrasi bateri di sebelah app
+const CELLS=3;                     // LiPo 3S
+const $ = id => document.getElementById(id);
+const led=$('led'), statusText=$('statusText'), connectBtn=$('connectBtn');
+const valX=$('valX'), valY=$('valY'), barX=$('barX'), barY=$('barY');
+const battCard=$('battCard'), battV=$('battV'), battP=$('battP'), battFill=$('battFill');
+const battMini=$('battMini'), battMiniFill=$('battMiniFill'), battMiniTxt=$('battMiniTxt');
+
+/* nilai sebenar yang dihantar (selepas had laju) */
+const sX = ()=> Math.round(curX * turnGain / 100);
+const sY = ()=> Math.round(curY * moveGain / 100);
+
+/* ---- Panel tetapan laju ---- */
+const sheet=$('sheet'), moveGainEl=$('moveGain'), turnGainEl=$('turnGain'), moveVal=$('moveVal'), turnVal=$('turnVal');
+$('cfgBtn').onclick=()=>sheet.classList.remove('hidden');
+$('cfgClose').onclick=()=>sheet.classList.add('hidden');
+sheet.addEventListener('click',e=>{ if(e.target===sheet) sheet.classList.add('hidden'); });
+function updateGains(){
+  moveGain=+moveGainEl.value; turnGain=+turnGainEl.value;
+  moveVal.textContent=moveGain+'%'; turnVal.textContent=turnGain+'%';
+  try{ localStorage.setItem('rs_move',moveGain); localStorage.setItem('rs_turn',turnGain); }catch(_){}
+  paint();
+}
+moveGainEl.oninput=updateGains; turnGainEl.oninput=updateGains;
+$('cfgReset').onclick=()=>{ moveGainEl.value=100; turnGainEl.value=100; updateGains(); };
+(function loadGains(){ try{ const m=localStorage.getItem('rs_move'), t=localStorage.getItem('rs_turn'); if(m)moveGainEl.value=m; if(t)turnGainEl.value=t; }catch(_){ } updateGains(); })();
+
+/* ---- Kalibrasi bateri ---- */
+try{ const c=parseFloat(localStorage.getItem('rs_cal')); if(c>0) appCal=c; }catch(_){}
+$('calSet').onclick=()=>{
+  const real=parseFloat($('calInput').value);
+  if(!lastRawV){ alert('Sambung robot dahulu supaya ada bacaan bateri.'); return; }
+  if(isNaN(real)||real<=0){ alert('Masukkan voltan sebenar (cth 12.18).'); return; }
+  appCal = real / lastRawV;
+  try{ localStorage.setItem('rs_cal', appCal); }catch(_){}
+  const v=lastRawV*appCal;
+  $('calNow').textContent=v.toFixed(2)+' V';
+  battV.textContent=v.toFixed(2)+' V';
+  $('calInput').value='';
+  alert('Kalibrasi disimpan. Bacaan bateri kini tepat.');
+};
+
+/* ---- Skrin penuh + kunci landscape ---- */
+const fsBtn=$('fsBtn');
+function inFS(){ return document.fullscreenElement || document.webkitFullscreenElement; }
+async function toggleFS(){
+  try{
+    if(!inFS()){
+      const el=document.documentElement;
+      if(el.requestFullscreen) await el.requestFullscreen();
+      else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      try{ await screen.orientation.lock('landscape'); }catch(_){}
+    }else{
+      try{ screen.orientation.unlock(); }catch(_){}
+      if(document.exitFullscreen) await document.exitFullscreen();
+      else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+  }catch(e){}
+}
+fsBtn.onclick=toggleFS;
+document.addEventListener('fullscreenchange',()=>{ fsBtn.textContent = inFS()?'🡼':'⛶'; });
+
+/* ---- Install PWA ---- */
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredPrompt=e; $('installBtn').classList.remove('hidden'); });
+$('installBtn').onclick=async()=>{ if(!deferredPrompt)return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('installBtn').classList.add('hidden'); };
+window.addEventListener('appinstalled',()=>$('installBtn').classList.add('hidden'));
+
+/* ---- Service worker ---- */
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{})); }
+
+/* ---- Bateri ---- */
+function classFor(p){ return p>50?'ok':(p>20?'warn':'low'); }
+function pctFromVolt(v){
+  const cell=v/CELLS;
+  const V=[3.30,3.50,3.70,3.80,3.85,3.92,4.00,4.10,4.20];
+  const P=[0,10,25,45,60,72,85,95,100];
+  if(cell<=V[0]) return 0;
+  if(cell>=V[8]) return 100;
+  for(let i=0;i<8;i++){ if(cell<V[i+1]) return Math.round(P[i]+(cell-V[i])/(V[i+1]-V[i])*(P[i+1]-P[i])); }
+  return 100;
+}
+function onBatt(e){
+  const raw=parseFloat(new TextDecoder().decode(e.target.value).trim().split(',')[0]);
+  if(isNaN(raw)) return;
+  lastRawV=raw;
+  const v=raw*appCal;                       // voltan terkalibrasi
+  const pc=pctFromVolt(v), cls=classFor(pc);
+  battV.textContent=v.toFixed(2)+' V'; battP.textContent=pc+'%'; battFill.style.width=pc+'%';
+  battCard.classList.remove('ok','warn','low'); battCard.classList.add(cls);
+  battMiniTxt.textContent=v.toFixed(1)+' V'; battMiniFill.style.width=pc+'%';
+  battMini.classList.remove('ok','warn','low'); battMini.classList.add(cls);
+  const calNow=$('calNow'); if(calNow) calNow.textContent=v.toFixed(2)+' V';
+}
+function resetBatt(){
+  battV.textContent='--.- V'; battP.textContent='--%'; battFill.style.width='0%';
+  battMiniTxt.textContent='--.- V'; battMiniFill.style.width='0%';
+  battCard.classList.remove('ok','warn','low'); battMini.classList.remove('ok','warn','low');
+}
+
+/* ---- BLE ---- */
+async function connect(){
+  if(!navigator.bluetooth){ alert('Browser ini tiada Web Bluetooth. Guna Chrome di Android, atau Bluefy di iPhone.'); return; }
+  try{
+    statusText.textContent='MENCARI...';
+    device = await navigator.bluetooth.requestDevice({ filters:[{services:[SERVICE_UUID]}] });
+    device.addEventListener('gattserverdisconnected', ()=>{ setConnected(false); });
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    rxChar  = await service.getCharacteristic(RX_UUID);
+    try{
+      txChar = await service.getCharacteristic(TX_UUID);
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', onBatt);
+    }catch(_){}
+    setConnected(true);
+  }catch(e){ statusText.textContent='PUTUS'; if(e.name!=='NotFoundError') alert('Gagal sambung: '+e.message); }
+}
+function setConnected(s){
+  connected=s; led.classList.toggle('on',s);
+  statusText.textContent = s?'SAMBUNG':'PUTUS';
+  connectBtn.textContent = s?'PUTUS':'SAMBUNG';
+  if(!s) resetBatt();
+}
+connectBtn.onclick = ()=>{ if(connected && device?.gatt?.connected) device.gatt.disconnect(); else connect(); };
+
+setInterval(()=>{
+  if(!connected || !rxChar || inflight) return;
+  const x=sX(), y=sY();
+  const msg = x+','+y;
+  if(msg===lastSent && x===0 && y===0) return;
+  lastSent=msg; inflight=true;
+  const data=new TextEncoder().encode(msg);
+  const p = rxChar.writeValueWithoutResponse ? rxChar.writeValueWithoutResponse(data) : rxChar.writeValue(data);
+  p.catch(()=>{}).finally(()=>{ inflight=false; });
+}, 45);
+
+function paint(){
+  const x=sX(), y=sY();
+  valX.textContent=x; valY.textContent=y;
+  valX.className='val mono '+(x>=0?'pos':'neg');
+  valY.className='val mono '+(y>=0?'pos':'neg');
+  barX.style.width=Math.abs(x)/2+'%'; barX.style.left=x>=0?'50%':(50-Math.abs(x)/2)+'%';
+  barY.style.width=Math.abs(y)/2+'%'; barY.style.left=y>=0?'50%':(50-Math.abs(y)/2)+'%';
+}
+
+class Stick{
+  constructor(el, knob, axis){
+    this.el=el; this.knob=knob; this.axis=axis;
+    this.cx=0; this.cy=0; this.R=0; this.active=false;
+    el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);this.start(e);});
+    el.addEventListener('pointermove',e=>this.move(e));
+    el.addEventListener('pointerup',()=>this.end());
+    el.addEventListener('pointercancel',()=>this.end());
+  }
+  rect(){const r=this.el.getBoundingClientRect();this.cx=r.left+r.width/2;this.cy=r.top+r.height/2;this.R=r.width/2*0.78;}
+  start(e){this.rect();this.active=true;this.el.classList.add('live');this.move(e);}
+  move(e){
+    if(!this.active)return;
+    const t=e.touches?e.touches[0]:e;
+    let dx=t.clientX-this.cx, dy=t.clientY-this.cy;
+    if(this.axis==='y') dx=0; else dy=0;
+    dx=Math.max(-this.R,Math.min(this.R,dx));
+    dy=Math.max(-this.R,Math.min(this.R,dy));
+    this.knob.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    if(this.axis==='y') curY=Math.round(-dy/this.R*100);
+    else                curX=Math.round( dx/this.R*100);
+    paint();
+  }
+  end(){
+    this.active=false;this.el.classList.remove('live');
+    this.knob.style.transform='translate(-50%,-50%)';
+    if(this.axis==='y') curY=0; else curX=0;
+    paint();
+  }
+}
+new Stick($('stickL'), $('knobL'), 'y');
+new Stick($('stickR'), $('knobR'), 'x');
+
+$('stopBtn').onclick=()=>{
+  curX=0; curY=0; lastSent='';
+  $('knobL').style.transform='translate(-50%,-50%)';
+  $('knobR').style.transform='translate(-50%,-50%)';
+  paint();
+};
+paint();
+</script>
+</body>
+</html>
