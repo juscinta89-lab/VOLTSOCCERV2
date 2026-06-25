@@ -93,6 +93,29 @@
   .batt.warn .bbar i{background:var(--turn);} .batt.warn .bv{color:var(--turn);}
   .batt.low .bbar i{background:var(--red);}   .batt.low .bv{color:var(--red);}
 
+  /* ---- Speed presets ---- */
+  .speedfront{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px 14px; width:min(316px,100%); max-width:84vw;}
+  .speedfront .lbl{font-size:9px; letter-spacing:3px; color:var(--muted); text-transform:uppercase; margin-bottom:9px; display:flex; justify-content:space-between; align-items:baseline;}
+  .speedfront .lbl b{font-size:15px; color:var(--drive); font-weight:800; letter-spacing:1px;}
+  .presets{display:flex; gap:8px;}
+  .presets button{flex:1; padding:12px 0; border-radius:10px; cursor:pointer;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--muted);
+    font:inherit; font-weight:800; font-size:14px; letter-spacing:.5px;
+    transition:transform .06s, background .12s, color .12s, border-color .12s;}
+  .presets button:active{transform:translateY(1px);}
+  .presets button.on{border-color:var(--drive); color:#062a18; background:var(--drive);}
+  .presets.turn button.on{border-color:var(--turn); color:#3a2a06; background:var(--turn);}
+
+  /* ---- Stick expo ---- */
+  .srow.expo .top span{color:var(--muted);}
+  .expowrap{display:flex; flex-direction:column; gap:11px; margin-top:10px;}
+  .curve{width:118px; height:118px; align-self:center; background:#08160e; border:1px solid var(--line); border-radius:12px;}
+  .exporow{display:flex; align-items:center; gap:10px;}
+  .elabel{flex:0 0 42px; font-size:11px; font-weight:800; letter-spacing:1px; text-transform:uppercase;}
+  .elabel.drive{color:var(--drive);} .elabel.turn{color:var(--turn);}
+  .exporow .presets{flex:1;}
+  .exporow .presets button{padding:10px 0; font-size:13px;}
+
   .rail{display:flex; gap:12px; justify-content:center; flex-wrap:wrap;}
   .gauge{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:9px 14px; width:148px;}
   .gauge .lbl{font-size:9px; letter-spacing:3px; color:var(--muted); text-transform:uppercase;}
@@ -230,7 +253,15 @@
       <div class="gauge"><div class="lbl">Drive Y</div><div class="val mono" id="valY">0</div><div class="bar"><i id="barY"></i></div></div>
       <div class="gauge"><div class="lbl">Turn X</div><div class="val mono" id="valX">0</div><div class="bar"><i id="barX"></i></div></div>
     </div>
-    <button class="btn danger" id="stopBtn">EMERGENCY STOP</button>
+    <div class="speedfront">
+      <div class="lbl"><span>Drive Speed</span><b id="moveVal">100%</b></div>
+      <div class="presets" data-grp="move">
+        <button data-v="25">25%</button>
+        <button data-v="50">50%</button>
+        <button data-v="75">75%</button>
+        <button data-v="100">100%</button>
+      </div>
+    </div>
   </div>
 
   <div class="pad-wrap right">
@@ -248,12 +279,46 @@
     <h3>SPEED SETTINGS</h3>
     <div class="sub">Limit the maximum speed. Adjustable while playing.</div>
     <div class="srow move">
-      <div class="top"><span>Drive Speed (forward/reverse)</span><b id="moveVal">100%</b></div>
-      <input type="range" id="moveGain" min="20" max="100" step="5" value="100">
+      <div class="top"><span>Drive Speed (forward/reverse)</span></div>
+      <div class="presets" data-grp="move" style="margin-top:12px;">
+        <button data-v="25">25%</button><button data-v="50">50%</button>
+        <button data-v="75">75%</button><button data-v="100">100%</button>
+      </div>
     </div>
     <div class="srow turn">
       <div class="top"><span>Turn Speed (left/right)</span><b id="turnVal">100%</b></div>
-      <input type="range" class="turn" id="turnGain" min="20" max="100" step="5" value="100">
+      <div class="presets turn" data-grp="turn" style="margin-top:12px;">
+        <button data-v="25">25%</button><button data-v="50">50%</button>
+        <button data-v="75">75%</button><button data-v="100">100%</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="srow expo">
+      <div class="top"><span>Stick Expo · fine control</span></div>
+      <div class="expowrap">
+        <svg class="curve" id="expoCurve" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <line x1="50" y1="4" x2="50" y2="96" stroke="rgba(242,248,244,.10)" stroke-width="0.8"/>
+          <line x1="4" y1="50" x2="96" y2="50" stroke="rgba(242,248,244,.10)" stroke-width="0.8"/>
+          <path d="M4 96 L96 4" stroke="rgba(242,248,244,.16)" stroke-width="0.8" stroke-dasharray="3 3" fill="none"/>
+          <path id="expoDrive" d="" stroke="var(--drive)" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path id="expoTurn" d="" stroke="var(--turn)" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="exporow">
+          <span class="elabel drive">Drive</span>
+          <div class="presets" data-grp="dexpo">
+            <button data-v="0">OFF</button><button data-v="30">LOW</button>
+            <button data-v="50">MED</button><button data-v="70">HIGH</button>
+          </div>
+        </div>
+        <div class="exporow">
+          <span class="elabel turn">Turn</span>
+          <div class="presets turn" data-grp="texpo">
+            <button data-v="0">OFF</button><button data-v="30">LOW</button>
+            <button data-v="50">MED</button><button data-v="70">HIGH</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="divider"></div>
@@ -281,6 +346,7 @@ const TX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 let device=null, rxChar=null, txChar=null, connected=false;
 let curX=0, curY=0, lastSent='', inflight=false;
 let moveGain=100, turnGain=100;
+let driveExpo=0, turnExpo=0;        // 0..1, stick expo (fine control, no lag)
 let lastRawV=0, appCal=1;          // battery calibration on the app side
 const CELLS=3;                     // 3S LiPo
 /* Standard 3S LiPo resting voltage -> % curve (per cell). Tunable. */
@@ -292,24 +358,78 @@ const valX=$('valX'), valY=$('valY'), barX=$('barX'), barY=$('barY');
 const battCard=$('battCard'), battV=$('battV'), battP=$('battP'), battFill=$('battFill');
 const battMini=$('battMini'), battMiniFill=$('battMiniFill'), battMiniTxt=$('battMiniTxt');
 
-/* values actually sent (after speed limit) */
-const sX = ()=> Math.round(curX * turnGain / 100);
-const sY = ()=> Math.round(curY * moveGain / 100);
+/* expo curve: fine near centre, full power at the edges (instant, no lag) */
+function applyExpo(v,e){ const x=v/100; return ((1-e)*x + e*x*x*x)*100; }
+/* values actually sent (after expo + speed limit) */
+const sX = ()=> Math.round(applyExpo(curX, turnExpo) * turnGain / 100);
+const sY = ()=> Math.round(applyExpo(curY, driveExpo) * moveGain / 100);
 
-/* ---- Speed settings panel ---- */
-const sheet=$('sheet'), moveGainEl=$('moveGain'), turnGainEl=$('turnGain'), moveVal=$('moveVal'), turnVal=$('turnVal');
+/* ---- Speed presets (front + settings, kept in sync) ---- */
+const sheet=$('sheet'), moveVal=$('moveVal'), turnVal=$('turnVal');
 $('cfgBtn').onclick=()=>sheet.classList.remove('hidden');
 $('cfgClose').onclick=()=>sheet.classList.add('hidden');
 sheet.addEventListener('click',e=>{ if(e.target===sheet) sheet.classList.add('hidden'); });
-function updateGains(){
-  moveGain=+moveGainEl.value; turnGain=+turnGainEl.value;
-  moveVal.textContent=moveGain+'%'; turnVal.textContent=turnGain+'%';
-  try{ localStorage.setItem('rs_move',moveGain); localStorage.setItem('rs_turn',turnGain); }catch(_){}
+
+function renderGroup(g,val){ g.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.v===val)); }
+function setMove(v){
+  moveGain=v; if(moveVal) moveVal.textContent=v+'%';
+  document.querySelectorAll('[data-grp="move"]').forEach(g=>renderGroup(g,v));
+  try{ localStorage.setItem('rs_move',v); }catch(_){}
   paint();
 }
-moveGainEl.oninput=updateGains; turnGainEl.oninput=updateGains;
-$('cfgReset').onclick=()=>{ moveGainEl.value=100; turnGainEl.value=100; updateGains(); };
-(function loadGains(){ try{ const m=localStorage.getItem('rs_move'), t=localStorage.getItem('rs_turn'); if(m)moveGainEl.value=m; if(t)turnGainEl.value=t; }catch(_){ } updateGains(); })();
+function setTurn(v){
+  turnGain=v; if(turnVal) turnVal.textContent=v+'%';
+  document.querySelectorAll('[data-grp="turn"]').forEach(g=>renderGroup(g,v));
+  try{ localStorage.setItem('rs_turn',v); }catch(_){}
+  paint();
+}
+document.querySelectorAll('[data-grp="move"] button').forEach(b=>b.onclick=()=>setMove(+b.dataset.v));
+document.querySelectorAll('[data-grp="turn"] button').forEach(b=>b.onclick=()=>setTurn(+b.dataset.v));
+$('cfgReset').onclick=()=>{ setMove(100); setTurn(100); setDExpo(0); setTExpo(0); };
+(function loadGains(){
+  const snap=x=>[25,50,75,100].reduce((a,b)=>Math.abs(b-x)<Math.abs(a-x)?b:a,100);
+  let m=100,t=100;
+  try{ const sm=parseInt(localStorage.getItem('rs_move')), st=parseInt(localStorage.getItem('rs_turn'));
+       if(sm>0)m=sm; if(st>0)t=st; }catch(_){}
+  setMove(snap(m)); setTurn(snap(t));
+})();
+
+/* ---- Stick expo ---- */
+function expoPath(e){
+  let d=''; const N=22;
+  for(let i=0;i<=N;i++){
+    const x=-1+2*i/N, y=(1-e)*x+e*x*x*x;
+    const px=4+(x+1)/2*92, py=96-(y+1)/2*92;
+    d+=(i?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' ';
+  }
+  return d.trim();
+}
+function drawExpoCurve(){
+  const d=$('expoDrive'), t=$('expoTurn');
+  if(d) d.setAttribute('d', expoPath(driveExpo));
+  if(t) t.setAttribute('d', expoPath(turnExpo));
+}
+function setDExpo(p){
+  driveExpo=p/100;
+  document.querySelectorAll('[data-grp="dexpo"]').forEach(g=>renderGroup(g,p));
+  try{ localStorage.setItem('rs_dexpo',p); }catch(_){}
+  drawExpoCurve(); paint();
+}
+function setTExpo(p){
+  turnExpo=p/100;
+  document.querySelectorAll('[data-grp="texpo"]').forEach(g=>renderGroup(g,p));
+  try{ localStorage.setItem('rs_texpo',p); }catch(_){}
+  drawExpoCurve(); paint();
+}
+document.querySelectorAll('[data-grp="dexpo"] button').forEach(b=>b.onclick=()=>setDExpo(+b.dataset.v));
+document.querySelectorAll('[data-grp="texpo"] button').forEach(b=>b.onclick=()=>setTExpo(+b.dataset.v));
+(function loadExpo(){
+  const snap=x=>[0,30,50,70].reduce((a,b)=>Math.abs(b-x)<Math.abs(a-x)?b:a,0);
+  let d=0,t=0;
+  try{ const sd=parseInt(localStorage.getItem('rs_dexpo')), st=parseInt(localStorage.getItem('rs_texpo'));
+       if(!isNaN(sd))d=sd; if(!isNaN(st))t=st; }catch(_){}
+  setDExpo(snap(d)); setTExpo(snap(t));
+})();
 
 /* ---- Battery calibration ---- */
 try{ const c=parseFloat(localStorage.getItem('rs_cal')); if(c>0) appCal=c; }catch(_){}
@@ -503,12 +623,6 @@ class Stick{
 new Stick($('stickL'), $('knobL'), 'y');
 new Stick($('stickR'), $('knobR'), 'x');
 
-$('stopBtn').onclick=()=>{
-  curX=0; curY=0; lastSent='';
-  $('knobL').style.transform='translate(-50%,-50%)';
-  $('knobR').style.transform='translate(-50%,-50%)';
-  paint();
-};
 paint();
 </script>
 </body>
