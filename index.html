@@ -222,6 +222,15 @@
   .fwactions{display:flex; gap:10px;}
   .fwactions .btn{flex:1; text-align:center;}
   .fwcode{background:#08160e; border:1px solid var(--line); border-radius:12px; padding:12px; margin:12px 0 0; max-height:44vh; overflow:auto; -webkit-overflow-scrolling:touch; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:11px; line-height:1.55; color:#cfe6d8; white-space:pre; tab-size:2;}
+  /* ---- Controls / gamepad / invert ---- */
+  .padchip{font-size:9px; font-weight:800; letter-spacing:1px; color:#062a18; background:var(--drive); padding:5px 8px; border-radius:8px; align-self:center;}
+  .srow.ctrl .top b{color:var(--drive); font-size:13px;}
+  .ctrlrow{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:13px;}
+  .clabel{font-size:13px; font-weight:700;}
+  .toggle{min-width:66px; padding:9px 14px; border-radius:10px; cursor:pointer; border:1px solid var(--line); background:var(--panel-2); color:var(--muted); font:inherit; font-weight:800; letter-spacing:1px; transition:.12s;}
+  .toggle:active{transform:translateY(1px);}
+  .toggle.on{border-color:var(--drive); color:#062a18; background:var(--drive);}
+  .ctrlhint{font-size:10px; color:var(--muted); margin-top:11px; line-height:1.5;}
 </style>
 </head>
 <body>
@@ -238,6 +247,7 @@
   <button class="icon-btn" id="fwBtn" title="Robot firmware (.ino)" style="font-size:13px;font-weight:800;letter-spacing:0;">&lt;/&gt;</button>
   <button class="icon-btn" id="fsBtn" title="Fullscreen">⛶</button>
   <button class="icon-btn amber hidden" id="installBtn" title="Install app">⤓</button>
+  <span class="padchip hidden" id="padChip">GAMEPAD</span>
   <div class="status"><i class="led" id="led"></i><span id="statusText">OFFLINE</span></div>
   <button class="btn primary" id="connectBtn">CONNECT</button>
 </header>
@@ -327,6 +337,20 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="srow ctrl">
+      <div class="top"><span>Controls · Gamepad</span><b id="padStatus">No gamepad</b></div>
+      <div class="ctrlrow">
+        <span class="clabel">Invert Drive (Y)</span>
+        <button class="toggle" id="invY">OFF</button>
+      </div>
+      <div class="ctrlrow">
+        <span class="clabel">Invert Turn (X)</span>
+        <button class="toggle" id="invX">OFF</button>
+      </div>
+      <div class="ctrlhint">Connect a USB / Bluetooth gamepad — left stick drives, right stick turns. Toggle invert if an axis feels reversed. Expo &amp; speed limits also apply to the gamepad.</div>
     </div>
 
     <div class="divider"></div>
@@ -627,9 +651,10 @@ const battMini=$('battMini'), battMiniFill=$('battMiniFill'), battMiniTxt=$('bat
 
 /* expo curve: fine near centre, full power at the edges (instant, no lag) */
 function applyExpo(v,e){ const x=v/100; return ((1-e)*x + e*x*x*x)*100; }
-/* values actually sent (after expo + speed limit) */
-const sX = ()=> Math.round(applyExpo(curX, turnExpo) * turnGain / 100);
-const sY = ()=> Math.round(applyExpo(curY, driveExpo) * moveGain / 100);
+let invertX=false, invertY=false;            // invert turn / drive (touch + gamepad)
+/* values actually sent (after invert + expo + speed limit) */
+const sX = ()=> Math.round(applyExpo(invertX?-curX:curX, turnExpo) * turnGain / 100);
+const sY = ()=> Math.round(applyExpo(invertY?-curY:curY, driveExpo) * moveGain / 100);
 
 /* ---- Speed presets (front + settings, kept in sync) ---- */
 const sheet=$('sheet'), moveVal=$('moveVal'), turnVal=$('turnVal');
@@ -887,8 +912,45 @@ class Stick{
     paint();
   }
 }
-new Stick($('stickL'), $('knobL'), 'y');
-new Stick($('stickR'), $('knobR'), 'x');
+const stickLref = new Stick($('stickL'), $('knobL'), 'y');
+const stickRref = new Stick($('stickR'), $('knobR'), 'x');
+
+/* ---- Invert toggles (touch + gamepad) ---- */
+function setToggle(btn,on){ if(btn){ btn.classList.toggle('on',on); btn.textContent=on?'ON':'OFF'; } }
+function setInvX(on){ invertX=on; setToggle($('invX'),on); try{ localStorage.setItem('rs_invx',on?1:0); }catch(_){} paint(); }
+function setInvY(on){ invertY=on; setToggle($('invY'),on); try{ localStorage.setItem('rs_invy',on?1:0); }catch(_){} paint(); }
+if($('invX')) $('invX').onclick=()=>setInvX(!invertX);
+if($('invY')) $('invY').onclick=()=>setInvY(!invertY);
+(function loadInv(){ let ix=false,iy=false; try{ ix=localStorage.getItem('rs_invx')==='1'; iy=localStorage.getItem('rs_invy')==='1'; }catch(_){} setInvX(ix); setInvY(iy); })();
+
+/* ---- Physical gamepad (left stick = drive, right stick = turn) ---- */
+let padIndex=null, gpPrevX=999, gpPrevY=999;
+const GP_DEADZONE=0.12;
+function gpDead(v){ return Math.abs(v)<GP_DEADZONE ? 0 : v; }
+function padOn(on){
+  const chip=$('padChip'), st=$('padStatus');
+  if(chip) chip.classList.toggle('hidden',!on);
+  if(st) st.textContent = on ? 'Gamepad \u2713' : 'No gamepad';
+  if(!on){ gpPrevX=999; gpPrevY=999; }
+}
+window.addEventListener('gamepadconnected', e=>{ padIndex=e.gamepad.index; padOn(true); });
+window.addEventListener('gamepaddisconnected', e=>{ if(padIndex===e.gamepad.index){ padIndex=null; padOn(false); } });
+function pollGamepad(){
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = (padIndex!=null) ? pads[padIndex] : null;
+  if(!gp){ for(const p of pads){ if(p){ gp=p; padIndex=p.index; padOn(true); break; } } }
+  if(gp && gp.axes && gp.axes.length>=2){
+    const ly = gpDead(gp.axes[1]||0);                                   // left stick Y
+    const rx = gpDead((gp.axes.length>2 ? gp.axes[2] : gp.axes[0])||0); // right stick X (fallback left X)
+    const dY = Math.round(-ly*100), tX = Math.round(rx*100);
+    let changed=false;
+    if((!stickLref || !stickLref.active) && dY!==gpPrevY){ curY=dY; gpPrevY=dY; changed=true; }
+    if((!stickRref || !stickRref.active) && tX!==gpPrevX){ curX=tX; gpPrevX=tX; changed=true; }
+    if(changed) paint();
+  }
+  requestAnimationFrame(pollGamepad);
+}
+requestAnimationFrame(pollGamepad);
 
 paint();
 </script>
