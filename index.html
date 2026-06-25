@@ -215,6 +215,13 @@
     .sheet h3{font-size:13px;}
     .sheet .sub{margin:4px 0 8px;}
   }
+
+  /* ---- Firmware viewer ---- */
+  .fwcard{width:min(560px,94vw);}
+  .fwsub{font-size:11px; color:var(--muted); margin:5px 0 12px; line-height:1.5;}
+  .fwactions{display:flex; gap:10px;}
+  .fwactions .btn{flex:1; text-align:center;}
+  .fwcode{background:#08160e; border:1px solid var(--line); border-radius:12px; padding:12px; margin:12px 0 0; max-height:44vh; overflow:auto; -webkit-overflow-scrolling:touch; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:11px; line-height:1.55; color:#cfe6d8; white-space:pre; tab-size:2;}
 </style>
 </head>
 <body>
@@ -228,6 +235,7 @@
   <div class="brand"><b>ROBOSOCCER <span class="byv">BY VOLT.</span></b><span>TWIN-STICK CONTROLLER</span></div>
   <div class="battmini" id="battMini"><span class="ico"><i id="battMiniFill"></i></span><span class="txt" id="battMiniTxt">--.- V</span></div>
   <button class="icon-btn" id="cfgBtn" title="Speed settings">⚙</button>
+  <button class="icon-btn" id="fwBtn" title="Robot firmware (.ino)" style="font-size:13px;font-weight:800;letter-spacing:0;">&lt;/&gt;</button>
   <button class="icon-btn" id="fsBtn" title="Fullscreen">⛶</button>
   <button class="icon-btn amber hidden" id="installBtn" title="Install app">⤓</button>
   <div class="status"><i class="led" id="led"></i><span id="statusText">OFFLINE</span></div>
@@ -337,6 +345,265 @@
     </div>
   </div>
 </div>
+
+<!-- Firmware viewer -->
+<div class="sheet hidden" id="fwSheet">
+  <div class="card fwcard">
+    <h3>ROBOT FIRMWARE · .INO</h3>
+    <div class="fwsub">Arduino code for the robot (GEGOR V1 / ESP32). Download it, then upload with Arduino IDE.</div>
+    <div class="fwactions">
+      <button class="btn primary" id="fwDownload">⤓ DOWNLOAD .INO</button>
+      <button class="btn" id="fwCopy">COPY</button>
+    </div>
+    <pre class="fwcode" id="fwView"></pre>
+    <div class="actions">
+      <button class="btn primary" id="fwClose">DONE</button>
+    </div>
+  </div>
+</div>
+
+<script type="text/plain" id="firmwareSrc">
+/*
+  ============================================================
+   ROBOSOCCER  -  ESP32 BLE Controller (2WD)  +  Pantau Bateri
+   Board: M1A/M1B + M2A/M2B + EN  (driver MOSFET/TB6612 style)
+  ============================================================
+  Kawalan : Web Bluetooth PWA (twin-stick)
+  Telemetri bateri dihantar ke PWA setiap 1 saat: "volt,peratus"
+
+  Serasi ESP32 Arduino core 2.x & 3.x.
+  Library : Adafruit_NeoPixel
+  Nama BLE : ROBOSOCCER
+  ============================================================
+*/
+
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <Adafruit_NeoPixel.h>
+
+// ---------- UUID (Nordic UART Service) ----------
+#define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_RX_UUID "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  // PWA -> ESP32 (joystick)
+#define CHAR_TX_UUID "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  // ESP32 -> PWA (bateri)
+
+// ====================  PIN BOARD AWAK  ====================
+#define WS_PIN     4
+#define BTN1_PIN   34
+#define BTN2_PIN   35
+#define CH1_PIN    13
+#define CH2_PIN    14
+#define CH3_PIN    27
+#define CH4_PIN    26
+#define M1A_PIN    19      // Motor 1 (KIRI)
+#define M1B_PIN    18
+#define M2A_PIN    16      // Motor 2 (KANAN)
+#define M2B_PIN    17
+#define EN_PIN     23      // Enable driver (HIGH = ON)
+#define VBAT_PIN   25      // bacaan bateri (ADC2)
+#define OLED_SDA   21
+#define OLED_SCL   22
+
+// ---------- Saluran LEDC ----------
+#define CH_M1A 0
+#define CH_M1B 1
+#define CH_M2A 2
+#define CH_M2B 3
+#define PWM_FREQ 1000
+#define PWM_RES  8
+
+// ---------- NeoPixel ----------
+#define NUM_LEDS 1
+Adafruit_NeoPixel pixels(NUM_LEDS, WS_PIN, NEO_GRB + NEO_KHZ800);
+
+// ====================  TUNING  ====================
+int   DEADZONE = 8;
+float trimL    = 1.00;
+float trimR    = 1.00;
+int   maxPWM   = 255;
+bool  invertM1 = false;
+bool  invertM2 = false;
+unsigned long FAILSAFE_MS = 400;
+
+// ====================  BATERI  ====================
+#define LIPO_CELLS   3          // bilangan sel LiPo (3S). Tukar 2/4 ikut pek awak.
+float  VBAT_CAL    = 4.00;      // *** KALIBRASI *** (lihat nota di bawah)
+unsigned long BATT_MS = 1000;   // hantar bacaan setiap 1 saat
+unsigned long lastBatt = 0;
+/*
+  CARA KALIBRASI VBAT_CAL:
+  1. Buka Serial Monitor (115200). Lihat baris "VBAT pin=x.xxxV".
+  2. Ukur voltan bateri sebenar guna multimeter, contoh 11.90V.
+  3. VBAT_CAL = voltan_sebenar / nilai_pin.
+     Contoh: pin=2.95V, sebenar=11.90V  ->  VBAT_CAL = 11.90/2.95 = 4.03
+  4. Masukkan nilai itu, upload semula. Bacaan app akan tepat.
+*/
+
+// ---------- Auto API PWM (core 2.x vs 3.x) ----------
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  #define PWM_SETUP(pin, ch)        ledcAttach(pin, PWM_FREQ, PWM_RES)
+  #define PWM_WRITE(pin, ch, duty)  ledcWrite(pin, duty)
+#else
+  #define PWM_SETUP(pin, ch)        do { ledcSetup(ch, PWM_FREQ, PWM_RES); ledcAttachPin(pin, ch); } while (0)
+  #define PWM_WRITE(pin, ch, duty)  ledcWrite(ch, duty)
+#endif
+
+// ---------- Keadaan ----------
+BLEServer*         pServer = nullptr;
+BLECharacteristic* pTxChar = nullptr;
+volatile bool      deviceConnected = false;
+unsigned long      lastRx = 0;
+int  lastCmdX = 0, lastCmdY = 0;
+uint32_t curColor = 0xFFFFFFFF;
+
+// ---------- LED status ----------
+void setColor(uint8_t r, uint8_t g, uint8_t b){
+  uint32_t c = pixels.Color(r,g,b);
+  if(c==curColor) return;
+  curColor=c;
+  for(int i=0;i<NUM_LEDS;i++) pixels.setPixelColor(i,c);
+  pixels.show();
+}
+
+// ---------- Bateri ----------
+float readVBat(){
+  uint32_t sum = 0;
+  for(int i=0;i<16;i++) sum += analogReadMilliVolts(VBAT_PIN);
+  float pinV = (sum/16.0)/1000.0;     // volt pada pin (selepas pembahagi)
+  return pinV * VBAT_CAL;             // anggaran voltan bateri sebenar
+}
+
+int batteryPct(float v){
+  float cell = v / LIPO_CELLS;
+  const float V[] = {3.30,3.50,3.70,3.80,3.85,3.92,4.00,4.10,4.20};
+  const int   P[] = {0,   10,  25,  45,  60,  72,  85,  95,  100};
+  if(cell <= V[0]) return 0;
+  if(cell >= V[8]) return 100;
+  for(int i=0;i<8;i++){
+    if(cell < V[i+1])
+      return P[i] + (int)((cell-V[i])/(V[i+1]-V[i])*(P[i+1]-P[i]));
+  }
+  return 100;
+}
+
+// ---------- Kawalan motor ----------
+void setMotor(int pinA,int chA,int pinB,int chB,int val){
+  val = constrain(val,-255,255);
+  if(val >= 0){ PWM_WRITE(pinA,chA,val);  PWM_WRITE(pinB,chB,0);    }
+  else        { PWM_WRITE(pinA,chA,0);    PWM_WRITE(pinB,chB,-val); }
+}
+void drive(int left, int right){
+  if(invertM1) left  = -left;
+  if(invertM2) right = -right;
+  setMotor(M1A_PIN, CH_M1A, M1B_PIN, CH_M1B, (int)(left  * trimL));
+  setMotor(M2A_PIN, CH_M2A, M2B_PIN, CH_M2B, (int)(right * trimR));
+}
+void stopMotors(){ drive(0,0); }
+
+// ---------- Mixing joystick -> 2WD ----------
+void handleJoystick(int x, int y){
+  if(abs(x) < DEADZONE) x = 0;
+  if(abs(y) < DEADZONE) y = 0;
+  lastCmdX = x; lastCmdY = y;
+  int left  = constrain(y + x, -100, 100);
+  int right = constrain(y - x, -100, 100);
+  left  = map(left,  -100, 100, -maxPWM, maxPWM);
+  right = map(right, -100, 100, -maxPWM, maxPWM);
+  drive(left, right);
+}
+
+// ---------- Callback BLE ----------
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* s) override { deviceConnected = true; lastRx = millis(); }
+  void onDisconnect(BLEServer* s) override {
+    deviceConnected = false;
+    stopMotors(); lastCmdX = lastCmdY = 0;
+    delay(50);
+    s->startAdvertising();
+  }
+};
+class RxCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String v = String(c->getValue().c_str());
+    int comma = v.indexOf(',');
+    if(comma < 0) return;
+    handleJoystick(v.substring(0, comma).toInt(), v.substring(comma + 1).toInt());
+    lastRx = millis();
+  }
+};
+
+// ---------- Setup ----------
+void setup(){
+  Serial.begin(115200);
+  analogReadResolution(12);
+
+  pixels.begin();
+  pixels.setBrightness(60);
+  setColor(40,0,0);
+
+  pinMode(EN_PIN, OUTPUT);
+  digitalWrite(EN_PIN, HIGH);
+  PWM_SETUP(M1A_PIN, CH_M1A);
+  PWM_SETUP(M1B_PIN, CH_M1B);
+  PWM_SETUP(M2A_PIN, CH_M2A);
+  PWM_SETUP(M2B_PIN, CH_M2B);
+  stopMotors();
+
+  BLEDevice::init("ROBOSOCCER");
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  BLEService* pService = pServer->createService(SERVICE_UUID);
+
+  BLECharacteristic* pRxChar = pService->createCharacteristic(
+      CHAR_RX_UUID,
+      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  pRxChar->setCallbacks(new RxCallbacks());
+
+  pTxChar = pService->createCharacteristic(
+      CHAR_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+  pTxChar->addDescriptor(new BLE2902());
+
+  pService->start();
+
+  BLEAdvertising* pAdv = BLEDevice::getAdvertising();
+  pAdv->addServiceUUID(SERVICE_UUID);
+  pAdv->setScanResponse(true);
+  pAdv->setMinPreferred(0x06);
+  pAdv->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("ROBOSOCCER sedia - menunggu sambungan BLE...");
+}
+
+// ---------- Loop ----------
+void loop(){
+  // Failsafe
+  if(deviceConnected && (millis() - lastRx > FAILSAFE_MS)){
+    stopMotors(); lastCmdX = lastCmdY = 0;
+  }
+
+  // Hantar bateri ke PWA
+  if(deviceConnected && pTxChar && (millis() - lastBatt > BATT_MS)){
+    lastBatt = millis();
+    float v   = readVBat();
+    int   pct = batteryPct(v);
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%.2f,%d", v, pct);
+    pTxChar->setValue((uint8_t*)buf, strlen(buf));
+    pTxChar->notify();
+    Serial.printf("VBAT pin=%.3fV  bateri=%.2fV  %d%%\n", v/VBAT_CAL, v, pct);
+  }
+
+  // LED status
+  if(!deviceConnected)                    setColor(40,0,0);
+  else if(lastCmdX!=0 || lastCmdY!=0)     setColor(0,20,40);
+  else                                    setColor(0,40,0);
+
+  delay(10);
+}
+</script>
 
 <script>
 const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -624,6 +891,35 @@ new Stick($('stickL'), $('knobL'), 'y');
 new Stick($('stickR'), $('knobR'), 'x');
 
 paint();
+</script>
+<script>
+(function(){
+  var FW_NAME='ROBOSOCCER_GEGOR_V1.ino';
+  var srcEl=document.getElementById('firmwareSrc');
+  var fwSrc=(srcEl?srcEl.textContent:'').replace(/^\n/,'').replace(/\s+$/,'')+'\n';
+  var view=document.getElementById('fwView'); if(view) view.textContent=fwSrc;
+  var sheet=document.getElementById('fwSheet');
+  function open(){ if(sheet) sheet.classList.remove('hidden'); }
+  function close(){ if(sheet) sheet.classList.add('hidden'); }
+  var btn=document.getElementById('fwBtn'); if(btn) btn.onclick=open;
+  var cl=document.getElementById('fwClose'); if(cl) cl.onclick=close;
+  if(sheet) sheet.addEventListener('click',function(e){ if(e.target===sheet) close(); });
+  var dl=document.getElementById('fwDownload');
+  if(dl) dl.onclick=function(){
+    var blob=new Blob([fwSrc],{type:'application/octet-stream'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download=FW_NAME;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); },1500);
+  };
+  var cp=document.getElementById('fwCopy');
+  if(cp) cp.onclick=function(){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(fwSrc).then(function(){ cp.textContent='COPIED ✓'; setTimeout(function(){ cp.textContent='COPY'; },1500); })
+      .catch(function(){ alert('Copy tak disokong — guna DOWNLOAD .INO.'); });
+    } else { alert('Copy tak disokong — guna DOWNLOAD .INO.'); }
+  };
+})();
 </script>
 </body>
 </html>
