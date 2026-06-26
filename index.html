@@ -21,14 +21,23 @@
   html,body{height:100%;margin:0;overflow:hidden;}
   body{
     background:
-      repeating-linear-gradient(90deg, rgba(255,255,255,.020) 0 64px, rgba(0,0,0,.04) 64px 128px),
-      radial-gradient(900px 520px at 82% -12%, #16381f 0, transparent 60%),
+      radial-gradient(135% 125% at 50% 42%, transparent 50%, rgba(0,0,0,.62) 100%),
+      radial-gradient(720px 420px at 80% -12%, rgba(94,224,160,.20) 0, transparent 62%),
+      repeating-linear-gradient(90deg, #0f3d21 0 74px, #0b2e18 74px 148px),
       var(--bg);
+    background-attachment:fixed;
     color:var(--text);
     font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
     touch-action:none; user-select:none;
     display:flex; flex-direction:column;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  /* garisan padang halus (garis tengah + bulatan tengah) */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(circle at 50% 50%, transparent 76px, rgba(233,247,238,.05) 77px, rgba(233,247,238,.05) 79px, transparent 80px),
+      linear-gradient(90deg, transparent calc(50% - 1px), rgba(233,247,238,.05) calc(50% - 1px), rgba(233,247,238,.05) calc(50% + 1px), transparent calc(50% + 1px));
   }
   .mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;}
 
@@ -36,11 +45,12 @@
     display:flex; align-items:center; gap:7px;
     padding:8px 14px; border-bottom:1px solid var(--line);
     background:linear-gradient(180deg,var(--panel),transparent); flex:0 0 auto;
+    position:relative; z-index:1;
   }
   .brand{display:flex; flex-direction:column; line-height:1; margin-right:auto;}
   .brand b{font-size:15px; letter-spacing:2px; font-weight:800; white-space:nowrap;}
   .brand .byv{color:var(--turn);}
-  .brand span{font-size:8px; letter-spacing:4px; color:var(--muted); margin-top:5px;}
+  .brand span{font-size:8px; letter-spacing:2.5px; color:var(--muted); margin-top:5px; white-space:nowrap;}
   .status{display:flex; align-items:center; gap:7px; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted);}
   .led{width:10px;height:10px;border-radius:50%;background:var(--red);}
   .led.on{background:var(--green); box-shadow:0 0 12px 1px rgba(52,211,153,.7);}
@@ -73,7 +83,7 @@
   .battmini.low{animation:blink 1s steps(1) infinite;}
   @keyframes blink{50%{opacity:.45;}}
 
-  main{flex:1; min-height:0; display:grid; gap:10px; padding:10px 16px 12px;}
+  main{flex:1; min-height:0; display:grid; gap:10px; padding:10px 16px 12px; position:relative; z-index:1;}
   @media (orientation:portrait){ main{grid-template-columns:1fr 1fr; grid-template-areas:"center center" "left right"; align-content:space-between;} }
   @media (orientation:landscape){
     main{grid-template-columns:auto 1fr auto; grid-template-areas:"left center right"; align-items:center;}
@@ -241,7 +251,7 @@
 </div>
 
 <header>
-  <div class="brand"><b>ROBOSOCCER <span class="byv">BY VOLT.</span></b><span>TWIN-STICK CONTROLLER</span></div>
+  <div class="brand"><b>ROBOSOCCER <span class="byv">BY VOLT.</span></b><span>POWERED BY ROBOBUAS GEGOR V1</span></div>
   <div class="battmini" id="battMini"><span class="ico"><i id="battMiniFill"></i></span><span class="txt" id="battMiniTxt">--.- V</span></div>
   <button class="icon-btn" id="cfgBtn" title="Speed settings">⚙</button>
   <button class="icon-btn" id="fwBtn" title="Robot firmware (.ino)" style="font-size:13px;font-weight:800;letter-spacing:0;">&lt;/&gt;</button>
@@ -764,8 +774,30 @@ window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredP
 $('installBtn').onclick=async()=>{ if(!deferredPrompt)return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('installBtn').classList.add('hidden'); };
 window.addEventListener('appinstalled',()=>$('installBtn').classList.add('hidden'));
 
-/* ---- Service worker ---- */
-if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{})); }
+/* ---- Service worker (auto-update) ---- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', async ()=>{
+    try{
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      reg.update();
+      setInterval(()=>reg.update(), 60000);          // semak update setiap minit
+      reg.addEventListener('updatefound', ()=>{
+        const nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener('statechange', ()=>{
+          if(nw.state==='installed' && navigator.serviceWorker.controller){
+            nw.postMessage && nw.postMessage('SKIP_WAITING');  // aktifkan versi baru terus
+          }
+        });
+      });
+    }catch(_){}
+  });
+  // bila SW baru ambil alih -> reload sekali untuk papar versi terkini
+  let _swReloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(_swReloaded) return; _swReloaded=true; location.reload();
+  });
+}
 
 /* ---- Battery ---- */
 function classFor(p){ return p>50?'ok':(p>20?'warn':'low'); }
